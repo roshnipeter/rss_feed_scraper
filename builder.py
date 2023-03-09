@@ -2,18 +2,25 @@ import datetime
 from pip import main
 import json
 import feedparser
-import es_service
 import hashlib
 
 
 def rss_feeder(feed_url):
     #feed to db
     feed = feedparser.parse(feed_url)
-    hash_key = generate_hash(feed)
+    feed_data = [{ 
+                    "title": entry.title,
+                    "summary": entry.summary,
+                    "link": entry.link,
+                    "published": entry.published,
+                } for entry in feed.entries ]
+    # print(feed)
+    hash_key = generate_hash(feed_data)
+    print(hash_key)
     return hash_key,feed
 
 def generate_hash(feed):
-    return hashlib.md5(json.dumps(sorted(feed)).encode('UTF-8')).hexdigest()
+    return hashlib.md5(json.dumps(feed).encode('UTF-8')).hexdigest()
 
 def write_to_es(feed, url, userId):
     es_record = {
