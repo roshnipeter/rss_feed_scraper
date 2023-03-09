@@ -1,13 +1,11 @@
 from functools import wraps
 from flask import Flask, request, jsonify, g
-# from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity
 import sqlite3
 import builder
 import json
 import os.path
 import traceback
 import jwt
-import auth_service, db_services
 from datetime import datetime, timedelta
 import config
 from  werkzeug.security import generate_password_hash, check_password_hash
@@ -17,12 +15,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this in production
-# jwt = JWTManager(app)
 
 
 def authenticate(object):
     '''
-    Method to check the validity of token passed along with API requests.
+    Method to check the validity of token passed along with API requests
     '''
     @wraps(object)
     def decorated(*args, **kwargs):
@@ -32,10 +29,11 @@ def authenticate(object):
             response = {"success": False, "message":"Token missing"}
             return response
         try:
-            jwt.decode(token, config.config['secret_key'], algorithms=config.config['algorithms'])
+            data = jwt.decode(token, config.config['secret_key'], algorithms=config.config['algorithms'])
+            print(data)
         except:
             return {"success": False, "message":"Invalid token"}
-        return  object(*args, **kwargs)
+        return object(data['user_id'], *args, **kwargs)
     return decorated
 
 
@@ -77,11 +75,11 @@ def login():
 
 @app.route('/feeds', methods=['GET'])
 @authenticate
-def list_feeds():
+def list_feeds(user_id):
     feeds = g.cursor.execute("""SELECT feeds.url, feedData.feed_data
                                 FROM feeds
                                 INNER JOIN feedData ON feeds.feed_id = feedData.feed_id
-                                WHERE feeds.user_id = 102;""")#get_jwt_identity())
+                                WHERE feeds.user_id = ?;""",(user_id,))
     return jsonify([{
         'url': feed[0],
         'data': json.loads(feed[1]),
@@ -170,7 +168,6 @@ def token_validator(user_id, password):
         if not user_data:
             return {"success":False, "message":"User does not exist!"}, 500
         user_data = user_data.fetchone()
-        print(user_data)
         if check_password_hash(user_data[1], password):
                 token = jwt.encode({
                                     'user_id': user_data[0],
