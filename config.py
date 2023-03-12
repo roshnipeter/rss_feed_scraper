@@ -1,3 +1,9 @@
+"""
+Reads a YAML file and loads its contents into a dictionary.
+
+Returns:
+    A dictionary containing the key-value pairs from the YAML file.
+"""
 import os
 import yaml
 
