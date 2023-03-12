@@ -1,8 +1,8 @@
-import datetime
 from pip import main
 import json
 import feedparser
 import hashlib
+import re
 
 
 def rss_feeder(feed_url):
@@ -14,11 +14,9 @@ def rss_feeder(feed_url):
                     "link": entry.link,
                     "published": entry.published,
                 } for entry in feed.entries ]
-    # print(feed)
-    hash_key = generate_hash(feed_data)
-    print(hash_key)
-    return hash_key,feed
+    hash_key = generate_hash(feed_url)
+    return hash_key,feed_data
 
-def generate_hash(feed):
-    return hashlib.md5(json.dumps(feed).encode('UTF-8')).hexdigest()
+def generate_hash(feed_url):
+    return hashlib.md5(json.dumps(re.sub('[^A-Za-z0-9]+', '', feed_url)).encode('UTF-8')).hexdigest()
 

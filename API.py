@@ -23,6 +23,7 @@ def create_user():
     response = create_user(int(userId), password)
     return response
 
+
 @app.route('/login',methods = ['POST'])
 def login():
     data = request.get_json()
@@ -35,7 +36,9 @@ def login():
 @app.route('/feeds', methods=['GET'])
 @authenticate
 def list_feeds(user_id):
-    response = db_service.get_feeds(user_id)
+    marked = request.args.get('marked')
+    url = request.args.get('feedUrl')
+    response = db_service.get_feeds(user_id, url, marked)
     return response 
 
 
@@ -45,13 +48,28 @@ def add_feed(user_id):
     url = request.json.get('feedUrl')
     if not url:
         return jsonify({'error': 'url is required'}), 400
+    response = db_service.insert_feeds_to_db(user_id, url)
+    return response
 
-    hash_key, feed = builder.rss_feeder(url)
-    try:
-        response = db_service.insert_feeds_to_db(user_id, url, hash_key,feed)
-        return response
-    except:
-        return jsonify({'error': 'Internal error'}), 500
+
+@app.route('/markread', methods=['PUT'])
+@authenticate
+def mark_read(user_id):
+    url = request.json.get('feedUrl')
+    item_id = request.json.get('itemId').split(',')
+    if not url:
+        return jsonify({'error': 'url is required'}), 400
+    response = db_service.mark_read(user_id, url, item_id)
+    return response
+
+@app.route('/update', methods=['PUT'])
+@authenticate
+def force_update(user_id):
+    url = request.json.get('feedUrl')
+    if not url:
+        return jsonify({'error': 'url is required'}), 400
+    response = db_service.force_feed_update(user_id, url)
+    return response
 
 
 def create_user(userId, password):
