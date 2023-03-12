@@ -4,14 +4,15 @@ import json
 import jwt
 from flask import jsonify
 from datetime import datetime, timedelta
+from dramatiq import actor
 import config
 import builder
-from dramatiq import actor
 from  werkzeug.security import generate_password_hash, check_password_hash
 import logging
 
 logger = logging.getLogger(__name__)
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+MAX_RETRIES = 5
 
 
 def get_db_cursor():
@@ -27,7 +28,8 @@ def get_db_cursor():
     cursor = db_connection.cursor()
     return db_connection, cursor
 
-@actor
+
+@actor()
 def update_all_feeds(user_id: int, url: str):
     """
     Updates all the RSS feeds associated with a given user by calling the force_feed_update function for each feed
@@ -53,7 +55,7 @@ def create_user(user_id: int, password: str) -> tuple:
         response dict
     """
     if not user_id or not password:
-        response = {"success": False, "message":"UserID / Password missing."}, 400
+        response = {"success": False, "message": "UserID / Password missing."}, 400
         return response
     response = insert_data_to_user(user_id, generate_password_hash(password))
     return response
@@ -96,14 +98,14 @@ def insert_data_to_user(user_id: int, password: str) -> tuple:
         cursor.execute("INSERT INTO user(user_id, password) VALUES (?,?);", (user_id, password))
         db_connection.commit()
         cursor.close()
-        return {"success":True, "message":"User has been created!"}, 200
+        return {"success": True, "message": "User has been created!"}, 200
     except sqlite3.OperationalError as e:
         traceback.print_exc()
         return {"success": False, "message": "Database connection error!", "error": str(e)}, 500
     except Exception as e:
         traceback.print_exc()
         db_connection.rollback()
-        return {"success":False, "message": "User not created!", "error": str(e)}, 500
+        return {"success": False, "message": "User not created!", "error": str(e)}, 500
     finally:
         cursor.close()
 
@@ -129,7 +131,7 @@ def insert_data_to_feed_items_table(user_id: int, hash_key: str, feed_data: list
         for item in feed_data:
             count += 1
             cursor.execute("INSERT INTO rss_feedData (feed_id, feed_item_id, feed_item, marked) VALUES (?,?,?,?);", (hash_key, count, json.dumps(item), 0))
-            cursor.execute("INSERT INTO rss_marked_status (user_id, feed_item_id, is_read, feed_id, updated_date) VALUES (?,?,?,?,?);",(user_id, count,0,hash_key,datetime.now().strftime(DATE_FORMAT)))
+            cursor.execute("INSERT INTO rss_marked_status (user_id, feed_item_id, is_read, feed_id, updated_date) VALUES (?,?,?,?,?);",(user_id, count, 0, hash_key, datetime.now().strftime(DATE_FORMAT)))
         db_connection.commit()
         if cursor.rowcount == 0:
             return False
@@ -190,7 +192,7 @@ def insert_feeds_to_db(user_id: int, url: str) -> tuple:
     try:
         db_connection, cursor = get_db_cursor()
         hash_key, feed_data = builder.rss_feeder(url)
-        feed_table_entry, duplicate = insert_data_to_feeds(user_id, url, hash_key,db_connection, cursor)
+        feed_table_entry, duplicate = insert_data_to_feeds(user_id, url, hash_key, db_connection, cursor)
 
         if not feed_table_entry:
             return {"success": False, 'message': 'Error in updating data'}, 500
@@ -222,11 +224,11 @@ def get_marked_items(user_id: int, url: str, marked: int, cursor: sqlite3.Cursor
     Returns:
         List: A list of IDs of the feed items matching the criteria, or None if no items were found.
         """
-    feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id,url))
+    feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id, url))
     if not feed_id_data:
         return []
     feed_id = feed_id_data.fetchone()[0]
-    feed_item_data = cursor.execute("SELECT feed_item_id FROM rss_marked_status WHERE feed_id=? AND is_read=?",(feed_id,marked,))
+    feed_item_data = cursor.execute("SELECT feed_item_id FROM rss_marked_status WHERE feed_id=? AND is_read=?",(feed_id, marked,))
     if not feed_item_data:
         return []
     return [feed[0] for feed in feed_item_data]
@@ -255,9 +257,9 @@ def get_feeds(user_id: int, url: str, marked=None) -> tuple:
                                   WHERE rss_feeds.user_id=? ORDER BY datetime(rss_feeds.updated_date) DESC""", (user_id,))
         else:
             if marked == 'read':
-                marked_item_ids = get_marked_items(user_id,url,marked=1, cursor=cursor)
+                marked_item_ids = get_marked_items(user_id, url, marked=1, cursor=cursor)
             elif marked == 'unread':
-                marked_item_ids = get_marked_items(user_id,url,marked=0, cursor=cursor)
+                marked_item_ids = get_marked_items(user_id, url, marked=0, cursor=cursor)
             if not marked_item_ids:
                 return jsonify({"success": False, 'message': f'No items in the feed that are {marked}.'}), 200
 
@@ -298,7 +300,7 @@ def mark_read(user_id: int, url: str, item_ids: list) -> tuple:
     """
     db_connection, cursor = get_db_cursor()
     try:
-        feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id,url))
+        feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id, url))
         if not feed_id_data:
             return {"success": False, "message": "No data found for the combination!"}, 404
         feed_id = feed_id_data.fetchone()[0]
@@ -342,7 +344,7 @@ def force_feed_update(user_id: int, url: str) -> tuple:
     except Exception as e:
         traceback.print_exc()
         db_connection.rollback()
-        return {"success":False, "message": "Error in force update", "error": str(e)}, 500
+        return {"success": False, "message": "Error in force update", "error": str(e)}, 500
     finally:
         cursor.close()
 
@@ -374,9 +376,10 @@ def token_validator(user_id: int, password: str) -> tuple:
             return {"success": False, "message": "User does not exist!"}, 404
         user_data = check_data.fetchone()
         if check_password_hash(user_data[1], password):
-                token = jwt.encode({
-                                    'user_id': user_data[0],
-                                    'exp' : datetime.utcnow() + timedelta(minutes = 60)
+                token = jwt.encode(
+                                    {
+                                        'user_id': user_data[0],
+                                        'exp' : datetime.utcnow() + timedelta(minutes = 60)
                                     }, config.config['secret_key'])
                 return {"success": True, "message": "Login successful!", "token":token}, 200
         else:
@@ -389,4 +392,3 @@ def token_validator(user_id: int, password: str) -> tuple:
         return {"success":False, "message": "Error in token validation", "error": str(e)}, 500
     finally:
         cursor.close()
-

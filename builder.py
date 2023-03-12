@@ -29,7 +29,7 @@ def rss_feeder(feed_url) -> tuple:
                     "summary": entry.summary,
                     "link": entry.link,
                     "published": entry.published,
-                } for entry in feed.entries ]
+                } for entry in feed.entries]
     hash_key = generate_hash(feed_url)
     return hash_key, feed_data
 
@@ -48,4 +48,3 @@ def generate_hash(feed_url):
     """
 
     return hashlib.md5(json.dumps(re.sub('[^A-Za-z0-9]+', '', feed_url)).encode('UTF-8')).hexdigest()
-

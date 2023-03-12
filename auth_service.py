@@ -23,15 +23,14 @@ def authenticate(auth_object):
     @wraps(auth_object)
     def decorated(*args, **kwargs):
         token = request.headers.get('Authorization')
-        token = str.replace(str(token), 'Bearer ','')
+        token = str.replace(str(token), 'Bearer ', '')
         if not token:
-            response = {"success": False, "message":"Token missing"}
+            response = {"success": False, "message": "Token missing"}
             return response
         try:
             data = jwt.decode(token, config.config['secret_key'], algorithms=config.config['algorithms'])
-        except:
-            traceback.print_exc()
-            return {"success": False, "message":"Invalid token"}
+        except Exception as e:
+            traceback.print_exc(e)
+            return {"success": False, "message": "Invalid token"}
         return auth_object(data['user_id'], *args, **kwargs)
     return decorated
-

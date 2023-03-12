@@ -1,18 +1,20 @@
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify
 from auth_service import authenticate
 import db_service
-from dramatiq import actor
+from dramatiq import actor, Retry
 from flask_dramatiq import Dramatiq
-from dramatiq.results import Results
+import config
+import logging
 
 app = Flask(__name__)
-app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this in production
+app.config['JWT_SECRET_KEY'] = config.config['secret_key']  # Change this in production
 
 dramatiq = Dramatiq(app)
 dramatiq.broker = 'amqp://guest:guest@rabbitmq:5672'
 
-@actor()
-def update_feeds(user_id, url) -> None:
+
+@actor(max_retries=5, min_backoff=10000, on_failure=Retry(5 * 60 * 1000))
+def update_feeds(user_id, url, failed_attempts=0) -> None:
     """
     This method is used to update all feeds for a given user and url. This is scheduled to update asynchronously in the background
         Parameters:
@@ -21,12 +23,21 @@ def update_feeds(user_id, url) -> None:
         Returns:
             None
     """
-    print("Updating feeds...")
-    db_service.update_all_feeds(user_id, url)
-    print("Updating feeds completed")
+    logging.info("Updating feeds...")
+    try:
+        db_service.update_all_feeds(user_id, url)
+    except Exception:
+        failed_attempts += 1
+        if failed_attempts > 3:
+            logging.info("Maximum number of attempts reached. Stopping feed update.")
+            return
+        logging.info(f"Update failed. Retrying in {5 * 60} seconds...")
+        update_feeds.send_with_options(args=[user_id, url, failed_attempts], delay=5 * 60 * 1000)
+    else:
+        logging.info("Updating feeds completed")
 
 
-@app.route('/user',methods = ['POST'])
+@app.route('/user', methods=['POST'])
 def create_user() -> tuple:
     """
     Creates a user in the database. The updated table is rss_user/
@@ -39,20 +50,20 @@ def create_user() -> tuple:
     user_id = data.get('username')
     password = data.get('password')
     if not user_id or not password:
-        response = {"success": False, "message":"UserID / Password missing."}, 400
+        response = {"success": False, "message": "UserID / Password missing."}, 400
         return response
     response = db_service.create_user(int(user_id), password)
     return response
 
 
-@app.route('/login',methods = ['POST'])
+@app.route('/login', methods=['POST'])
 def login() -> dict:
     """
-    This method is used to login a user. 
-        Parameters:
-            None
-        Returns:
-            response dict
+    This method is used to login a user.
+    Parameters:
+        None
+    Returns:
+        response dict
     """
     data = request.get_json()
     user_id = int(data.get('username'))
@@ -74,14 +85,14 @@ def list_feeds(user_id) -> dict:
     marked = request.args.get('marked')
     url = request.args.get('feedUrl')
     response = db_service.get_feeds(user_id, url, marked)
-    return response 
+    return response
 
 
 @app.route('/feeds', methods=['POST'])
 @authenticate
 def add_feed(user_id):
     """
-    Add RSS feeds of a URL. 
+    Add RSS feeds of a URL.
         Parameters:
             user_id : User ID of the logged user
         Returns:
@@ -98,7 +109,7 @@ def add_feed(user_id):
 @authenticate
 def mark_read(user_id) -> tuple:
     """
-    Method to mark a feed item as read. 
+    Method to mark a feed item as read.
         Parameters:
             user_id : User ID of the logged user
         Returns:
@@ -107,15 +118,16 @@ def mark_read(user_id) -> tuple:
     url = request.json.get('feedUrl')
     item_id = request.json.get('itemId').split(',')
     if not url:
-        return {"success":False, "message":"Please provide feedUrl!"}, 400
+        return {"success": False, "message": "Please provide feedUrl!"}, 400
     response = db_service.mark_read(user_id, url, item_id)
     return response
+
 
 @app.route('/update', methods=['PUT'])
 @authenticate
 def force_update(user_id) -> tuple:
     """
-    Force update a feed that's followed by the user. 
+    Force update a feed that's followed by the user.
         Parameters:
             user_id : User ID of the logged user
         Returns:
@@ -123,29 +135,10 @@ def force_update(user_id) -> tuple:
     """
     url = request.json.get('feedUrl')
     if not url:
-        return {"success":False, "message":"Please provide feedUrl!"}, 400
+        return {"success": False, "message": "Please provide feedUrl!"}, 400
     result = update_feeds.send(user_id, url)
-    return {'success': True, 'message': 'Feed update task has been scheduled.', 'task_id':result.message_id}, 200
+    return {'success': True, 'message': 'Feed update task has been scheduled.', 'task_id': result.message_id}, 200
 
-"""
-@app.route('/update/status/<string:task_id>', methods=['GET'])
-@authenticate
-def update_status(user_id, task_id):
-    '''
-    Force update a feed that's followed by the user. 
-        Parameters:
-            user_id : User ID of the logged user
-        Returns:
-            response dict
-    '''
-    result_data = Results.get_result(task_id)
-    if result_data.is_successful():
-        return {'success': True, 'message': 'Task completed successfully.'}, 200
-    elif result_data.is_failed():
-        return {'success': False, 'message': 'Task failed.'}, 200
-    else:
-        return {'success': False, 'message': 'Task is still running.'}, 200
-"""
 
 if __name__ == '__main__':
     app.run(port=8000,debug=True)
