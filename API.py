@@ -1,10 +1,11 @@
-from flask import Flask, request, jsonify
-from auth_service import authenticate
-import db_service
-from dramatiq import actor, Retry
-from flask_dramatiq import Dramatiq
 import config
 import logging
+from flask import Flask, request, jsonify
+from dramatiq import actor, Retry
+from flask_dramatiq import Dramatiq
+import db_service
+from auth_service import authenticate
+
 
 app = Flask(__name__)
 app.config['JWT_SECRET_KEY'] = config.config['secret_key']  # Change this in production

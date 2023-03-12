@@ -1,8 +1,8 @@
-from functools import wraps
-import traceback
-from flask import request
 import jwt
 import config
+import traceback
+from flask import request
+from functools import wraps
 
 
 def authenticate(auth_object):
