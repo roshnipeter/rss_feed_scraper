@@ -3,9 +3,6 @@ import feedparser
 import hashlib
 import re
 
-from pip import main
-
-
 def rss_feeder(feed_url) -> tuple:
     """
     Parses an RSS Feed and returns it's data as a list opf dictionaries, along with the hash-key of feed URL
