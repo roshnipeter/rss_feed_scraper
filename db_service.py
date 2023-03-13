@@ -60,124 +60,6 @@ def create_user(user_id: int, password: str) -> tuple:
     return response
 
 
-def insert_data_to_user(user_id: int, password: str) -> tuple:
-    """
-    Inserts a new user into the 'user' table of the database.
-    Args:
-     - user_id: A string representing the username of the new user.
-     - password: A string representing the password of the new user.
-    Returns:
-     - A tuple containing a dictionary with a success message and an HTTP status code.
-
-    The 'insert_data_to_user' method creates an SQL query to insert a new user into the 'user' table of the database.
-    It then executes the query using the 'get_db_cursor' helper method to establish a connection to the database and
-    create a cursor object. If the insertion is successful, the changes are committed and the connection and cursor
-    are closed. If there is a database connection error or any other exception is raised, the changes are rolled back,
-    and an error message is returned.
-
-    Example usage:
-
-    Assuming the following parameters:
-    user_id = "ABC"
-    password = "password"
-
-    The 'insert_data_to_user' method would generate and execute the following SQL query:
-    "INSERT INTO user(user_id, password) VALUES (?,?);" with the parameters ('ABC', 'password').
-
-    If the insertion is successful, the method would return the following tuple:
-    ({'success': True, 'message': 'User has been created!'}, 200)
-    """
-
-    db_connection, cursor = get_db_cursor()
-    try:
-        check_data = cursor.execute("SELECT * FROM users WHERE user_id=?;", (user_id))
-        if check_data:
-            cursor.close()
-            return {"success": True, "message": "User exists!"}, 200
-        cursor.execute("INSERT INTO user(user_id, password) VALUES (?,?);", (user_id, password))
-        db_connection.commit()
-        cursor.close()
-        return {"success": True, "message": "User has been created!"}, 200
-    except sqlite3.OperationalError as e:
-        traceback.print_exc()
-        return {"success": False, "message": "Database connection error!", "error": str(e)}, 500
-    except Exception as e:
-        traceback.print_exc()
-        db_connection.rollback()
-        return {"success": False, "message": "User not created!", "error": str(e)}, 500
-    finally:
-        cursor.close()
-
-
-def insert_data_to_feed_items_table(user_id: int, hash_key: str, feed_data: list, db_connection: sqlite3.Connection, cursor: sqlite3.Cursor) -> bool:
-    """
-    This function inserts RSS feed items into the database for a given user and feed URL.
-    Args:
-     - user_id: ID of the user for whom to insert data.
-     - hash_key: Hashed key of the feed url
-     - feed_data: List of dictionaries containing feed item data after parsing.
-     - db_connection: SQLite3 database connection object.
-     - cursor: Cursor object for executing SQL queries.
-
-    Returns:
-     - bool: Returns True if the data is inserted successfully, False otherwise.
-    """
-    try:
-        check_data = cursor.execute("SELECT * FROM rss_feedData WHERE feed_id=?;", (hash_key))
-        if check_data:
-            return True
-        count = 0
-        for item in feed_data:
-            count += 1
-            cursor.execute("INSERT INTO rss_feedData (feed_id, feed_item_id, feed_item, marked) VALUES (?,?,?,?);", (hash_key, count, json.dumps(item), 0))
-            cursor.execute("INSERT INTO rss_marked_status (user_id, feed_item_id, is_read, feed_id, updated_date) VALUES (?,?,?,?,?);",(user_id, count, 0, hash_key, datetime.now().strftime(DATE_FORMAT)))
-        db_connection.commit()
-        if cursor.rowcount == 0:
-            return False
-        return True
-    except sqlite3.OperationalError:
-        traceback.print_exc()
-        return False
-    except Exception:
-        traceback.print_exc()
-        db_connection.rollback()
-        return False
-    finally:
-        cursor.close()
-
-
-def insert_data_to_feeds(user_id: int, url: str, hash_key: str, db_connection: sqlite3.Connection, cursor: sqlite3.Cursor) -> tuple:
-    """This function inserts feed data into the rss_feeds table for a given user.
-
-    Args:
-     - user_id: ID of the user for whom to insert data.
-     - url: URL of the feed to which the data belongs.
-     - hash_key: Hashed key of the feed URL.
-     - db_connection: SQLite3 database connection object.
-     - cursor: Cursor object for executing SQL queries.
-
-    Returns:
-     - tuple: A tuple containing two boolean values indicating the success status of the operation and whether the data is a duplicate.
-    """
-    try:
-        check_data = cursor.execute("SELECT * FROM rss_feeds WHERE user_id=? AND feed_id=?", (user_id, hash_key))
-        if check_data:
-            return False, True
-        cursor.execute("INSERT INTO rss_feeds(user_id, url, feed_id, updated_date) VALUES (?,?,?,?); ", (user_id, url, hash_key, datetime.now().strftime(DATE_FORMAT)))
-        db_connection.commit()
-        if cursor.rowcount == 0:
-            return False, False
-        return True, False
-    except sqlite3.OperationalError:
-        traceback.print_exc()
-        return False, False
-    except Exception:
-        traceback.print_exc()
-        return False, False
-    finally:
-        cursor.close()
-
-
 def insert_feeds_to_db(user_id: int, url: str) -> tuple:
     """
     Args:
@@ -191,9 +73,9 @@ def insert_feeds_to_db(user_id: int, url: str) -> tuple:
     try:
         db_connection, cursor = get_db_cursor()
         hash_key, feed_data = builder.rss_feeder(url)
-        feed_table_entry, duplicate = insert_data_to_feeds(user_id, url, hash_key, db_connection, cursor)
 
-        if not feed_table_entry:
+        feed_table_entry, duplicate = insert_data_to_feeds(user_id, url, hash_key, db_connection, cursor)
+        if feed_table_entry is False and duplicate is False:
             return {"success": False, 'message': 'Error in updating data'}, 500
         if duplicate:
             return {"success": True, 'message': 'URL already followed by user'}, 200
@@ -208,29 +90,8 @@ def insert_feeds_to_db(user_id: int, url: str) -> tuple:
         return {"success": False, "message": "Database connection error!", "error": str(e)}, 500
     except Exception as e:
         return {"success": False, "message": "Insertion error!", "error": str(e)}, 500
-
-
-def get_marked_items(user_id: int, url: str, marked: int, cursor: sqlite3.Cursor) -> list:
-    """
-    Retrieves the IDs of the feed items that match the given criteria of being marked or unmarked for a specific user and URL.
-
-    Args:
-        user_id: The ID of the user whose feed items are being fetched.
-        url: The URL of the feed whose items are being fetched.
-        marked: An integer value indicating whether to fetch marked (1) or unmarked (0) feed items.
-        cursor: The cursor object to execute SQL queries.
-
-    Returns:
-        List: A list of IDs of the feed items matching the criteria, or None if no items were found.
-        """
-    feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id, url))
-    if not feed_id_data:
-        return []
-    feed_id = feed_id_data.fetchone()[0]
-    feed_item_data = cursor.execute("SELECT feed_item_id FROM rss_marked_status WHERE feed_id=? AND is_read=?",(feed_id, marked,))
-    if not feed_item_data:
-        return []
-    return [feed[0] for feed in feed_item_data]
+    finally:
+        cursor.close()
 
 
 def get_feeds(user_id: int, url: str, marked=None) -> tuple:
@@ -267,7 +128,7 @@ def get_feeds(user_id: int, url: str, marked=None) -> tuple:
                                     FROM rss_feeds INNER JOIN rss_feedData
                                     ON rss_feeds.feed_id=rss_feedData.feed_id
                                     WHERE rss_feeds.user_id=? AND rss_feedData.feed_item_id IN ({placeholders})""",([user_id] + marked_item_ids))
-            if not feeds:
+            if feeds is []:
                 return {"success": False, 'message': 'No items identified.'}, 404
         return [{
             'id': feed[2],
@@ -285,6 +146,147 @@ def get_feeds(user_id: int, url: str, marked=None) -> tuple:
         cursor.close()
 
 
+def insert_data_to_user(user_id: int, password: str) -> tuple:
+    """
+    Inserts a new user into the 'user' table of the database.
+    Args:
+     - user_id: A string representing the username of the new user.
+     - password: A string representing the password of the new user.
+    Returns:
+     - A tuple containing a dictionary with a success message and an HTTP status code.
+
+    The 'insert_data_to_user' method creates an SQL query to insert a new user into the 'user' table of the database.
+    It then executes the query using the 'get_db_cursor' helper method to establish a connection to the database and
+    create a cursor object. If the insertion is successful, the changes are committed and the connection and cursor
+    are closed. If there is a database connection error or any other exception is raised, the changes are rolled back,
+    and an error message is returned.
+
+    Example usage:
+
+    Assuming the following parameters:
+    user_id = "ABC"
+    password = "password"
+
+    The 'insert_data_to_user' method would generate and execute the following SQL query:
+    "INSERT INTO user(user_id, password) VALUES (?,?);" with the parameters ('ABC', 'password').
+
+    If the insertion is successful, the method would return the following tuple:
+    ({'success': True, 'message': 'User has been created!'}, 200)
+    """
+
+    db_connection, cursor = get_db_cursor()
+    try:
+        check_data = cursor.execute("SELECT * FROM user WHERE user_id=?;", (user_id,))
+        if check_data.fetchone():
+            cursor.close()
+            return {"success": True, "message": "User exists!"}, 200
+        cursor.execute("INSERT INTO user(user_id, password) VALUES (?,?);", (user_id, password))
+        db_connection.commit()
+        cursor.close()
+        return {"success": True, "message": "User has been created!"}, 200
+    except sqlite3.OperationalError as e:
+        traceback.print_exc()
+        return {"success": False, "message": "Database connection error!", "error": str(e)}, 500
+    except Exception as e:
+        traceback.print_exc()
+        db_connection.rollback()
+        return {"success": False, "message": "User not created!", "error": str(e)}, 500
+    finally:
+        cursor.close()
+
+
+def insert_data_to_feed_items_table(user_id: int, hash_key: str, feed_data: list, db_connection: sqlite3.Connection, cursor: sqlite3.Cursor) -> bool:
+    print(cursor)
+    """
+    This function inserts RSS feed items into the database for a given user and feed URL.
+    Args:
+     - user_id: ID of the user for whom to insert data.
+     - hash_key: Hashed key of the feed url
+     - feed_data: List of dictionaries containing feed item data after parsing.
+     - db_connection: SQLite3 database connection object.
+     - cursor: Cursor object for executing SQL queries.
+
+    Returns:
+     - bool: Returns True if the data is inserted successfully, False otherwise.
+    """
+    try:
+        check_data = cursor.execute("SELECT * FROM rss_feedData WHERE feed_id=?;", (hash_key,))
+        if check_data.fetchone():
+            return True
+        count = 0
+        for item in feed_data:
+            count += 1
+            cursor.execute("INSERT INTO rss_feedData (feed_id, feed_item_id, feed_item, marked) VALUES (?,?,?,?);", (hash_key, count, json.dumps(item), 0))
+            cursor.execute("INSERT INTO rss_marked_status (user_id, feed_item_id, is_read, feed_id, updated_date) VALUES (?,?,?,?,?);",(user_id, count, 0, hash_key, datetime.now().strftime(DATE_FORMAT)))
+        db_connection.commit()
+        if cursor.rowcount == 0:
+            return False
+        return True
+    except sqlite3.OperationalError:
+        traceback.print_exc()
+        return False
+    except Exception:
+        traceback.print_exc()
+        db_connection.rollback()
+        return False
+    finally:
+        cursor.close()
+
+
+def insert_data_to_feeds(user_id: int, url: str, hash_key: str, db_connection: sqlite3.Connection, cursor: sqlite3.Cursor) -> tuple:
+    """This function inserts feed data into the rss_feeds table for a given user.
+
+    Args:
+     - user_id: ID of the user for whom to insert data.
+     - url: URL of the feed to which the data belongs.
+     - hash_key: Hashed key of the feed URL.
+     - db_connection: SQLite3 database connection object.
+     - cursor: Cursor object for executing SQL queries.
+
+    Returns:
+     - tuple: A tuple containing two boolean values indicating the success status of the operation and whether the data is a duplicate.
+    """
+    try:
+        check_data = cursor.execute("SELECT * FROM rss_feeds WHERE user_id=? AND feed_id=?", (user_id, hash_key))
+        if check_data.fetchone():
+            return False, True
+        cursor.execute("INSERT INTO rss_feeds(user_id, url, feed_id, updated_date) VALUES (?,?,?,?); ", (user_id, url, hash_key, datetime.now().strftime(DATE_FORMAT)))
+        db_connection.commit()
+        if cursor.rowcount == 0:
+            return False, False
+        return True, False
+    except sqlite3.OperationalError:
+        traceback.print_exc()
+        return False, False
+    except Exception:
+        print('here')
+        traceback.print_exc()
+        return False, False
+
+
+def get_marked_items(user_id: int, url: str, marked: int, cursor: sqlite3.Cursor) -> list:
+    """
+    Retrieves the IDs of the feed items that match the given criteria of being marked or unmarked for a specific user and URL.
+
+    Args:
+        user_id: The ID of the user whose feed items are being fetched.
+        url: The URL of the feed whose items are being fetched.
+        marked: An integer value indicating whether to fetch marked (1) or unmarked (0) feed items.
+        cursor: The cursor object to execute SQL queries.
+
+    Returns:
+        List: A list of IDs of the feed items matching the criteria, or None if no items were found.
+        """
+    feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id, url))
+    if feed_id_data is []:
+        return []
+    feed_id = feed_id_data.fetchone()[0]
+    feed_item_data = cursor.execute("SELECT feed_item_id FROM rss_marked_status WHERE feed_id=? AND is_read=?",(feed_id, marked,))
+    if feed_item_data is []:
+        return []
+    return [feed[0] for feed in feed_item_data]
+
+
 def mark_read(user_id: int, url: str, item_ids: list) -> tuple:
     """
     Marks a list of item ids as read for the given user and URL.
@@ -300,7 +302,7 @@ def mark_read(user_id: int, url: str, item_ids: list) -> tuple:
     db_connection, cursor = get_db_cursor()
     try:
         feed_id_data = cursor.execute("SELECT feed_id FROM rss_feeds WHERE user_id=? AND url=?",(user_id, url))
-        if not feed_id_data:
+        if feed_id_data is []:
             return {"success": False, "message": "No data found for the combination!"}, 404
         feed_id = feed_id_data.fetchone()[0]
         for item_id in item_ids:
@@ -371,7 +373,7 @@ def token_validator(user_id: int, password: str) -> tuple:
     db_connection, cursor = get_db_cursor()
     try:
         check_data = cursor.execute(select_query, (user_id,))
-        if not check_data:
+        if check_data is []:
             return {"success": False, "message": "User does not exist!"}, 404
         user_data = check_data.fetchone()
         if check_password_hash(user_data[1], password):
