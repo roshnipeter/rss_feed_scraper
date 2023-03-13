@@ -41,7 +41,7 @@ def update_feeds(user_id, url, failed_attempts=0) -> None:
 @app.route('/user', methods=['POST'])
 def create_user() -> tuple:
     """
-    Creates a user in the database. The updated table is rss_user/
+    Creates a user in the database. The updated table is user
         Parameters:
             None
         Returns:
@@ -85,7 +85,10 @@ def list_feeds(user_id) -> dict:
     """
     marked = request.args.get('marked')
     url = request.args.get('feedUrl')
-    response = db_service.get_feeds(user_id, url, marked)
+    if url:
+        response = db_service.get_feeds(user_id, url, marked)
+    else:
+        response = db_service.get_user_feed(user_id)
     return response
 
 

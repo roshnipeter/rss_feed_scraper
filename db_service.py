@@ -46,7 +46,7 @@ def update_all_feeds(user_id: int, url: str):
 
 def create_user(user_id: int, password: str) -> tuple:
     """
-    Method to add user details to the rss_user database.
+    Method to add user details to the user database.
     Args:
      - user_id : User ID of the logged user
      - password: Password string of the user
@@ -115,6 +115,7 @@ def get_feeds(user_id: int, url: str, marked=None) -> tuple:
                                   FROM rss_feeds INNER JOIN rss_feedData
                                   ON rss_feeds.feed_id=rss_feedData.feed_id
                                   WHERE rss_feeds.user_id=? ORDER BY datetime(rss_feeds.updated_date) DESC""", (user_id,))
+
         else:
             if marked == 'read':
                 marked_item_ids = get_marked_items(user_id, url, marked=1, cursor=cursor)
@@ -144,6 +145,18 @@ def get_feeds(user_id: int, url: str, marked=None) -> tuple:
         return {"success": False, "message": 'Error in fetching records', "error": str(e)}, 500
     finally:
         cursor.close()
+
+
+def get_user_feed(user_id: int):
+    db_connection, cursor = get_db_cursor()
+    feeds = cursor.execute(f"""SELECT url
+                                FROM rss_feeds 
+                                WHERE user_id=?""",(user_id,))
+    if feeds is []:
+        return {"success": False, 'message': 'No items identified.'}, 404
+    return [{
+            'url': feed[0],
+        } for feed in feeds], 200
 
 
 def insert_data_to_user(user_id: int, password: str) -> tuple:
