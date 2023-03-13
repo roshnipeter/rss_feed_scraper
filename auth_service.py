@@ -17,7 +17,7 @@ def authenticate(auth_object):
     Example usage:
 
     @authenticate
-    def my_secure_function(user_id, arg1, arg2, ...):
+    def function(user_id, arg1, arg2, ...):
         # do something secure with user_id and the arguments
     """
     @wraps(auth_object)
@@ -29,6 +29,8 @@ def authenticate(auth_object):
             return response
         try:
             data = jwt.decode(token, config.config['secret_key'], algorithms=config.config['algorithms'])
+        except jwt.exceptions.DecodeError as e:
+            return {"success": False, "message": "Invalid token"}
         except Exception as e:
             traceback.print_exc(e)
             return {"success": False, "message": "Invalid token"}

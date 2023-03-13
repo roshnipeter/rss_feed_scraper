@@ -11,9 +11,7 @@ import config
 import builder
 
 
-logger = logging.getLogger(__name__)
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-MAX_RETRIES = 5
 
 
 def get_db_cursor():
@@ -41,9 +39,9 @@ def update_all_feeds(user_id: int, url: str):
     Returns:
      - None
     """
-    logger.info("Started")
+    logging.info("Started")
     force_feed_update.send(user_id, url)
-    logger.info("Ended")
+    logging.info("Ended")
 
 
 def create_user(user_id: int, password: str) -> tuple:

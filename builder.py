@@ -3,6 +3,8 @@ import feedparser
 import hashlib
 import re
 
+from pip import main
+
 
 def rss_feeder(feed_url) -> tuple:
     """
@@ -48,3 +50,4 @@ def generate_hash(feed_url):
     """
 
     return hashlib.md5(json.dumps(re.sub('[^A-Za-z0-9]+', '', feed_url)).encode('UTF-8')).hexdigest()
+
