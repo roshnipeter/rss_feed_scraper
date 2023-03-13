@@ -18,20 +18,20 @@ dramatiq.broker = 'amqp://guest:guest@rabbitmq:5672'
 def update_feeds(user_id, url, failed_attempts=0) -> None:
     """
     This method is used to update all feeds for a given user and url. This is scheduled to update asynchronously in the background
-        Parameters:
-            user_id : ID of the user whose feed needs to be updated
-            url: URL that requires updation
-        Returns:
-            None
+    Parameters:
+        user_id : ID of the user whose feed needs to be updated
+        url: URL that requires updation
+    Returns:
+        None
     """
     logging.info("Updating feeds...")
     try:
         db_service.update_all_feeds(user_id, url)
     except Exception:
         failed_attempts += 1
-        if failed_attempts > 3:
+        if failed_attempts > 5:
             logging.info("Maximum number of attempts reached. Stopping feed update.")
-            return
+            return 
         logging.info(f"Update failed. Retrying in {5 * 60} seconds...")
         update_feeds.send_with_options(args=[user_id, url, failed_attempts], delay=5 * 60 * 1000)
     else:

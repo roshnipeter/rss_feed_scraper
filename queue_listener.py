@@ -5,10 +5,10 @@ import db_service
 import config
 
 
-def on_message(channel, method, body):
+def on_message(channel, method, properties, body):
     """
     This method prcesses the incoming messages from a queue. For each message, the user id and feedurl are extracted from the message body and the method 
-    force_feed_update is called. Upon completion of processing each message, as an acknowledgement, the delivery tag of the message is returned to the queue. In case
+    force_feed_update is called. Upon completion of processing each message, as an acknowledgement, the delivery tag of the message is. In case
     processing fails, a reject is returned.
     Args
     - channel: a channel object from the pika module that's used to consume messages from the queue.
